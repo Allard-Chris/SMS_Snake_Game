@@ -1,0 +1,12 @@
+
+[libraries]
+bank 0 slot 5 build/sms.lib
+
+
+[ramsections]
+bank 0 slot 5 "SMS_Z80"
+
+
+[objects]
+build/main.o
+

@@ -1,0 +1,24 @@
+;===============================================================================
+; wla-dx directives for memory
+;===============================================================================
+; Help WLA-DX to detect system's memory architecture.
+.MEMORYMAP
+        SLOT    0       START $0000 SIZE $4000  NAME "SLOT0" ; 16Ko Slot 0
+        SLOT    1       START $4000 SIZE $4000  NAME "SLOT1" ; 16Ko Slot 1
+        SLOT    2       START $8000 SIZE $4000  NAME "SLOT2" ; 16Ko Slot 2
+        SLOT    3       START $C000 SIZE $2000  NAME "RAM"   ; 8Ko RAM
+        SLOT    4       START $0000 SIZE $4000  NAME "VRAM"  ; 16Ko VDP RAM
+        SLOT    5       START $0000 SIZE $10000 NAME "Z80"   ; Address Space
+        DEFAULTSLOT 0
+.ENDME
+
+;===============================================================================
+; wla-dx directives for rombanks
+;===============================================================================
+; Use to define cartridge size.
+.ROMBANKMAP
+    BANKSTOTAL  4                       ; Tell the total amount of ROM banks.
+    BANKSIZE    $4000                   ; 32KB of ROM
+    BANKS       4
+.ENDRO
+

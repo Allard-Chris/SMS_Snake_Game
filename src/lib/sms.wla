@@ -1,0 +1,48 @@
+;===============================================================================
+; wla-dx directives for ram section.
+;===============================================================================
+; Here we will just define special addresses used by the Sega Master System.
+.RAMSECTION "SMS_Z80"
+        SMS_SLOT0               DSB 16 * 1024                           ;[$0000]
+        SMS_SLOT1               DSB 16 * 1024                           ;[$4000]
+        SMS_SLOT2               DSB 16 * 1024                           ;[$8000]
+        SMS_RAM                 DSB (8 * 1024)                          ;[$C000]
+        SMS_RAM_MIRROR          DSB (8 * 1024) - 8                      ;[$E000]
+        SMS_GLASSES             DSB 4                                   ;[$FFF8]
+        SMS_MAPPER_CONTROL      DB                                      ;[$FFFC]
+        SMS_MAPPER_SLOT0        DB                                      ;[$FFFD]
+        SMS_MAPPER_SLOT1        DB                                      ;[$FFFE]
+        SMS_MAPPER_SLOT2        DB                                      ;[$FFFF]
+.ENDS
+
+;===============================================================================
+; Z80 ports and constants
+;===============================================================================
+.DEF    SMS_PORTS_MEMORY        $3E                                     EXPORT
+.DEF    SMS_PORTS_JOYPAD        $3F                                     EXPORT
+.DEF    SMS_PORTS_VDP_DATA      $BE                                     EXPORT
+.DEF    SMS_PORTS_VDP_COMMAND   $BF                                     EXPORT
+.DEF    SMS_PORTS_VDP_STATUS    $BF                                     EXPORT
+
+.DEF    SMS_VDP_READ_RAM        $3F                                     EXPORT
+.DEF    SMS_VDP_WRITE_RAM       $40                                     EXPORT
+.DEF    SMS_VDP_WRITE_CRAM      $C0                                     EXPORT
+.DEF    SMS_VDP_V_COUNTER       $7E                                     EXPORT
+.DEF    SMS_VDP_H_COUNTER       $7F                                     EXPORT
+.DEF    SMS_VDP_REGISTER_WRITE  $80                                     EXPORT
+.DEF    SMS_VDP_REGISTER_0      SMS_VDP_REGISTER_WRITE | 0              EXPORT
+.DEF    SMS_VDP_REGISTER_1      SMS_VDP_REGISTER_WRITE | 1              EXPORT
+.DEF    SMS_VDP_REGISTER_2      SMS_VDP_REGISTER_WRITE | 2              EXPORT
+.DEF    SMS_VDP_REGISTER_3      SMS_VDP_REGISTER_WRITE | 3              EXPORT
+.DEF    SMS_VDP_REGISTER_4      SMS_VDP_REGISTER_WRITE | 4              EXPORT
+.DEF    SMS_VDP_REGISTER_5      SMS_VDP_REGISTER_WRITE | 5              EXPORT
+.DEF    SMS_VDP_REGISTER_6      SMS_VDP_REGISTER_WRITE | 6              EXPORT
+.DEF    SMS_VDP_REGISTER_7      SMS_VDP_REGISTER_WRITE | 7              EXPORT
+.DEF    SMS_VDP_REGISTER_8      SMS_VDP_REGISTER_WRITE | 8              EXPORT
+.DEF    SMS_VDP_REGISTER_9      SMS_VDP_REGISTER_WRITE | 9              EXPORT
+.DEF    SMS_VDP_REGISTER_10     SMS_VDP_REGISTER_WRITE | 10             EXPORT
+
+.DEF    SMS_PORT_JOY1           $DC                                     EXPORT
+.DEF    SMS_PORT_JOY2           $DD                                     EXPORT
+
+.DEF    SMS_RAM_ADDRESS         $C000                                   EXPORT
