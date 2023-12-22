@@ -39,7 +39,7 @@
 ;===============================================================================
 ; NMI (Pause Button) interrupt handler
 ;===============================================================================
-.ORG $0066
+.ORG $0066load_nmi_plt
         call    f_pauseHandler
         retn                            ; Return and acquit NMI.
 
@@ -61,7 +61,6 @@ f_init:
 
         ; ====== Init VDP Registers.
         call    f_VDPInitialisation
-
 
         ; ====== Clear VRAM.
         ld      a, $00                  ; VRAM write address to 0.
@@ -107,6 +106,12 @@ f_init:
                 or      c
                 jr      nz, @loop_load_tiles
 
+        ; ====== disable screen, again ?
+        ;ld      a, %00100000
+        ;out     (SMS_PORTS_VDP_COMMAND), a
+        ;ld      a, $81
+        ;out     (SMS_PORTS_VDP_COMMAND), a
+
         ; ====== Draw field.
         call    f_draw_field
 
@@ -125,6 +130,7 @@ f_init:
         ld      (RAM_SNAKE_TAIL_X_POS), a
         ld      (RAM_SNAKE_TAIL_Y_POS), a
         ld      (RAM_SNAKE_HEAD_Y_POS), a
+        ld      (RAM_PALETTE_SWITCH),   a
 
         ld      a, $01
         ld      (RAM_SNAKE_HEAD_X_POS), a
@@ -214,6 +220,7 @@ f_main_loop:
         ld      (RAM_GAME_ROUTINE_DONE), a
         jp      f_main_loop
 
+
 ;===============================================================================
 ; Function to move snake's head
 ;===============================================================================
@@ -257,6 +264,7 @@ f_move_snake_head:
         ld      (RAM_SNAKE_HEAD_MEM_POS), hl
 
         ret
+
 
 ;===============================================================================
 ; Function to move snake's head
@@ -563,6 +571,7 @@ f_make_apple:
 
 @no_more_space:
         RST     $00                     ; For now, we just reset PC.
+
 
 ;===============================================================================
 ; Function to compute VDP address based on X and Y position.
@@ -923,11 +932,51 @@ f_draw_tile:
         out     (SMS_PORTS_VDP_DATA), a
         ret
 
+
 ;===============================================================================
 ; Function to handle what's going on when player press Pause button.
 ;===============================================================================
 f_pauseHandler:
-        nop
+        ld      a, (RAM_PALETTE_SWITCH)
+        cp      $00
+        jp      z, @load_nmi_plt
+
+        ld      a, $00
+        ld      (RAM_PALETTE_SWITCH), a
+
+        ld      hl, plt_SnakeTiles
+        ld      b, plt_SnakeTilesSize
+        ld      a, 0
+        out     (SMS_PORTS_VDP_COMMAND), a
+        ld      a, SMS_VDP_WRITE_CRAM
+        out     (SMS_PORTS_VDP_COMMAND), a
+        @loop_load_plt:
+                ld      a, (hl)
+                out     (SMS_PORTS_VDP_DATA), a
+                inc     hl
+                dec     b
+                jp      nz, @loop_load_plt
+        jp      @end_pauseHandler
+
+@load_nmi_plt:
+        ld      a, $01
+        ld      (RAM_PALETTE_SWITCH), a
+
+        ; ====== Load palette.
+        ld      hl, plt_SnakeNmi
+        ld      b, plt_SnakeNmiSize
+        ld      a, 0
+        out     (SMS_PORTS_VDP_COMMAND), a
+        ld      a, SMS_VDP_WRITE_CRAM
+        out     (SMS_PORTS_VDP_COMMAND), a
+        @loop_load_plt_nmi:
+                ld      a, (hl)
+                out     (SMS_PORTS_VDP_DATA), a
+                inc     hl
+                dec     b
+                jp      nz, @loop_load_plt_nmi
+
+@end_pauseHandler:
         retn
 
 
@@ -1009,11 +1058,15 @@ addr_field_borders:
 .dw     $390E, $0002, $0000, $0040
 .dw     $3930, $0002, $0002, $0040
 
+
 ;===============================================================================
 ; ASSETS DATA
 ;===============================================================================
 plt_SnakeTiles:
 .INCBIN "assets/palettes/snakeTiles.plt.bin" fsize plt_SnakeTilesSize
+
+plt_SnakeNmi:
+.INCBIN "assets/palettes/snake_nmi.plt.bin" fsize plt_SnakeNmiSize
 
 tiles_snake:
 .INCBIN "assets/tiles/snake.tileset.bin" fsize tiles_snakeSize

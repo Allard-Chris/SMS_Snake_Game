@@ -3,6 +3,8 @@
         RAM_VDP_ROUTINE_DONE    BYTE
         RAM_FRAME_COUNTER       BYTE
         RAM_RNG_VALUE           BYTE
+        RAM_PALETTE_SWITCH      BYTE
+
 
         RAM_SNAKE_SPEED         BYTE
         RAM_SNAKE_GROWING       BYTE
