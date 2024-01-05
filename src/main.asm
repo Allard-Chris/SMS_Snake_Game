@@ -31,7 +31,7 @@
 ;===============================================================================
 .ORG $0038
         di                              ; Disable interrupt.
-        call    f_interruptHandler      ; Process interrupt.
+        call    f_vdp_iHandler          ; Process interrupt.
         ei                              ; Enable interrupt.
         ret
 
@@ -39,8 +39,8 @@
 ;===============================================================================
 ; NMI (Pause Button) interrupt handler
 ;===============================================================================
-.ORG $0066load_nmi_plt
-        call    f_pauseHandler
+.ORG $0066
+        call    f_pause_iHandler
         retn                            ; Return and acquit NMI.
 
 
@@ -59,9 +59,6 @@ f_init:
         ld      bc, $1FFF               ; Copy 8191 bytes. $C000 to $DFFF.
         ldir
 
-        ; ====== Init VDP Registers.
-        call    f_VDPInitialisation
-
         ; ====== Clear VRAM.
         ld      a, $00                  ; VRAM write address to 0.
         out     (SMS_PORTS_VDP_COMMAND), a
@@ -76,7 +73,10 @@ f_init:
                 or      c
                 jr      nz, @loop_clear_vram
 
-        ; ====== Load palette.
+        ; ====== Init VDP Registers.
+        call    f_VDPInitialisation
+
+        ; ====== Load Snake palette.
         ld      hl, plt_SnakeTiles
         ld      b, plt_SnakeTilesSize
         ld      a, 0
@@ -90,7 +90,7 @@ f_init:
         dec     b
         jp      nz, @loop_load_plt
 
-        ; ====== Load tiles.
+        ; ====== Load Snake tiles.
         ld      a, $00
         out     (SMS_PORTS_VDP_COMMAND), a
         or      SMS_VDP_WRITE_RAM
@@ -106,17 +106,11 @@ f_init:
                 or      c
                 jr      nz, @loop_load_tiles
 
-        ; ====== disable screen, again ?
-        ;ld      a, %00100000
-        ;out     (SMS_PORTS_VDP_COMMAND), a
-        ;ld      a, $81
-        ;out     (SMS_PORTS_VDP_COMMAND), a
-
         ; ====== Draw field.
         call    f_draw_field
 
         ; ====== Init variables.
-        ld      a, $1E
+        ld      a, SNAKE_DEFAULT_SPEED
         ld      (RAM_SNAKE_SPEED), a
 
         ld      hl, $3910               ; snake tail starting position.
@@ -131,6 +125,7 @@ f_init:
         ld      (RAM_SNAKE_TAIL_Y_POS), a
         ld      (RAM_SNAKE_HEAD_Y_POS), a
         ld      (RAM_PALETTE_SWITCH),   a
+        ld      (RAM_APPLE_EATEN), a
 
         ld      a, $01
         ld      (RAM_SNAKE_HEAD_X_POS), a
@@ -141,7 +136,6 @@ f_init:
         ld      (RAM_SNAKE_DIRECTION), a
         ld      (RAM_SNAKE_OLD_DIRECTION), a
         ld      (RAM_SNAKE_TAIL_DIRECTION), a
-        ld      (RAM_SNAKE_ARRAY), a
 
         ld      a, SEED                 ; load the seed at compiling. CHANGE ME.
         ld      (RAM_RNG_VALUE), a
@@ -149,9 +143,9 @@ f_init:
         call    f_make_apple
 
         ; ====== enable screen.
-        ld      a, %11100010
+        ld      a, %11100000
         out     (SMS_PORTS_VDP_COMMAND), a
-        ld      a, $81
+        ld      a, SMS_VDP_REGISTER_1
         out     (SMS_PORTS_VDP_COMMAND), a
 
         ; ====== Enable interrupt.
@@ -182,200 +176,60 @@ f_main_loop:
         cp      (hl)
         jp      nz, @end_main_loop      ; If timer is not reached:
 
-        ; ====== Move Snake
+        ; ====== Set the new snake direction.
         ld      a, (RAM_SNAKE_DIRECTION)
         ld      (RAM_SNAKE_OLD_DIRECTION), a
         ld      a, (RAM_SNAKE_NEXT_DIRECTION)
         ld      (RAM_SNAKE_DIRECTION), a
 
-        call    f_move_snake_head
-        call    f_move_snake_tail
-
-        ld      a, $00
-        ld      (RAM_FRAME_COUNTER), a  ; Flush frame counter.
-
-        ; ====== Collision Detection.
-        call    f_detect_collision
-
-        ; ====== Check apple eaten.
-        ld      a, (RAM_APPLE_EATEN)
-        cp      $01
-        jp      nz, @end_main_loop
-        ; apple eaten.
-        ld      a, $00
-        ld      (RAM_APPLE_EATEN), a
-        call    f_move_snake_head       ; grow the head.
-        call    f_make_apple            ; generate a new apple.
-        ld      a, $00
-        ld      (RAM_FRAME_COUNTER), a  ; Flush frame counter.
-        ld      hl, RAM_SNAKE_SPEED
-        ld      a, (hl)
-        cp      $0A
-        jp      c, @end_main_loop
-        dec     (hl)
-
-        ; ====== End main loop.
-@end_main_loop:
-        ld      a, $01
-        ld      (RAM_GAME_ROUTINE_DONE), a
-        jp      f_main_loop
-
-
-;===============================================================================
-; Function to move snake's head
-;===============================================================================
-f_move_snake_head:
-        ; The current head position is now the old position.
-        ld      a, (RAM_SNAKE_HEAD_X_POS)
-        ld      (RAM_SNAKE_HEAD_OLD_X_POS), a
-        ld      a, (RAM_SNAKE_HEAD_Y_POS)
-        ld      (RAM_SNAKE_HEAD_OLD_Y_POS), a
-        ld      de, (RAM_SNAKE_HEAD_MEM_POS)
-        ld      (RAM_SNAKE_HEAD_OLD_MEM_POS), de
-
-        ; Update snake array with the current direction
-        ; at current head position.
-        ld      hl, RAM_SNAKE_HEAD_X_POS
-        ld      b, (hl)
-        ld      hl, RAM_SNAKE_HEAD_Y_POS
-        ld      c, (hl)
-
-        call    f_compute_array_index_from_position
-
-        ld      de, RAM_SNAKE_ARRAY
-        add     hl, de
-        ld      a, (RAM_SNAKE_DIRECTION)
-        ld      (hl), a
-
-        ; Moving the snake head.
+        ; ====== Compute the next movement.
         ld      a, (RAM_SNAKE_HEAD_X_POS)
         ld      b, a
         ld      a, (RAM_SNAKE_HEAD_Y_POS)
         ld      c, a
         ld      a, (RAM_SNAKE_DIRECTION)
         ld      hl, (RAM_SNAKE_HEAD_MEM_POS)
-
-        call    f_move_body
-
+        call    f_compute_body_movement
         ld      a, b
-        ld      (RAM_SNAKE_HEAD_X_POS), a
+        ld      (RAM_SNAKE_HEAD_NEXT_X_POS), a
         ld      a, c
-        ld      (RAM_SNAKE_HEAD_Y_POS), a
-        ld      (RAM_SNAKE_HEAD_MEM_POS), hl
+        ld      (RAM_SNAKE_HEAD_NEXT_Y_POS), a
+        ld      (RAM_SNAKE_HEAD_NEXT_MEM_POS), hl
 
-        ret
+        ; ====== Check collision for the next movement.
+        call    f_detect_collision
 
+        ; ====== Move the head.
+        call    f_move_snake_head
 
-;===============================================================================
-; Function to move snake's head
-;===============================================================================
-f_move_snake_tail:
-        ; The current tail position is now the old position.
-        ld      a, (RAM_SNAKE_TAIL_X_POS)
-        ld      (RAM_SNAKE_TAIL_OLD_X_POS), a
-        ld      a, (RAM_SNAKE_TAIL_Y_POS)
-        ld      (RAM_SNAKE_TAIL_OLD_Y_POS), a
-        ld      de, (RAM_SNAKE_TAIL_MEM_POS)
-        ld      (RAM_SNAKE_TAIL_OLD_MEM_POS), de
+        ; ====== Move the tail.
+        call    f_move_snake_tail
 
-        ; Flush current tail position in the snake array.
-        ld      hl, RAM_SNAKE_TAIL_X_POS
-        ld      b, (hl)
-        ld      hl, RAM_SNAKE_TAIL_Y_POS
-        ld      c, (hl)
+        ; ====== Generate a new apple if we've eaten one.
+        ld      a, (RAM_APPLE_EATEN)
+        cp      $01
+        jp      nz, @no_apple_eaten
+        ld      a, $00
+        ld      (RAM_APPLE_EATEN), a
+        call    f_make_apple
 
-        call    f_compute_array_index_from_position
-
-        ld      de, RAM_SNAKE_ARRAY
-        add     hl, de
+        ; and increase snake's speed.
+        ld      hl, RAM_SNAKE_SPEED
         ld      a, (hl)
-        ld      b, $00
-        ld      (hl), b
+        cp      SNAKE_MAX_SPEED
+        jp      c, @no_apple_eaten
+        dec     (hl)                    ; Increase snake speed.
+@no_apple_eaten:
 
-        ; Moving the snake tail.
-        ld      a, (RAM_SNAKE_TAIL_X_POS)
-        ld      b, a
-        ld      a, (RAM_SNAKE_TAIL_Y_POS)
-        ld      c, a
-        ld      a, (RAM_SNAKE_TAIL_DIRECTION)
-        ld      hl, (RAM_SNAKE_TAIL_MEM_POS)
+        ; ====== Flush frame counter.
+        ld      a, $00
+        ld      (RAM_FRAME_COUNTER), a
 
-        call    f_move_body
-
-        ld      a, b
-        ld      (RAM_SNAKE_TAIL_X_POS), a
-        ld      a, c
-        ld      (RAM_SNAKE_TAIL_Y_POS), a
-        ld      (RAM_SNAKE_TAIL_MEM_POS), hl
-
-        ; Update the tail direction based on value in snake array.
-        ld      hl, RAM_SNAKE_TAIL_X_POS
-        ld      b, (hl)
-        ld      hl, RAM_SNAKE_TAIL_Y_POS
-        ld      c, (hl)
-
-        call    f_compute_array_index_from_position
-
-        ld      de, RAM_SNAKE_ARRAY
-        add     hl, de
-        ld      a, (hl)
-        ld      (RAM_SNAKE_TAIL_DIRECTION), a
-
-
-;===============================================================================
-; Function to move body part
-; in    a:      BODY_DIRECTION
-; in    b:      BODY_X_POS
-; in    c:      BODY_Y_POS
-; in    hl:     BODY_MEM_POS
-;===============================================================================
-f_move_body:
-        cp      GOING_UP
-        jr      z, @moving_up
-
-        cp      GOING_DOWN
-        jr      z, @moving_down
-
-        cp      GOING_LEFT
-        jr      z, @moving_left
-
-        cp      GOING_RIGHT
-        jr      z, @moving_right
-
-@moving_up:
-        dec     c
-        ld      a, l
-        sub     $40
-        ld      l, a
-        jr      nc, @moving_up_no_borrow
-        dec     h
-@moving_up_no_borrow:
-        jr      @end_moving
-
-@moving_down:
-        inc     c
-        ld      de, $40
-        add     hl, de
-        jr      @end_moving
-
-@moving_left:
-        dec     b
-        ld      a, l
-        sub     $02
-        ld      l, a
-        jr      nc, @moving_left_no_borrow
-        dec     h
-@moving_left_no_borrow:
-        jr      @end_moving
-
-@moving_right:
-        inc     b
-        ld      de, $02
-        add     hl, de
-        jr      @end_moving
-
-@end_moving:
-        ret
+        ; ====== End main loop.
+@end_main_loop:
+        ld      a, $01
+        ld      (RAM_GAME_ROUTINE_DONE), a
+        jp      f_main_loop
 
 
 ;===============================================================================
@@ -435,30 +289,198 @@ f_read_joypad:
 
 
 ;===============================================================================
-; Function to detect a collision with the edge or the snake himself
+; Function to compute the next body movement.
+; in    a:      BODY_DIRECTION
+; in    b:      BODY_X_POS
+; in    c:      BODY_Y_POS
+; in    hl:     BODY_MEM_POS
+;===============================================================================
+f_compute_body_movement:
+        cp      GOING_UP
+        jr      z, @moving_up
+
+        cp      GOING_DOWN
+        jr      z, @moving_down
+
+        cp      GOING_LEFT
+        jr      z, @moving_left
+
+        cp      GOING_RIGHT
+        jr      z, @moving_right
+
+@moving_up:
+        dec     c
+        ld      a, l
+        sub     $40
+        ld      l, a
+        jr      nc, @moving_up_no_borrow
+        dec     h
+@moving_up_no_borrow:
+        jr      @end_moving
+
+@moving_down:
+        inc     c
+        ld      de, $40
+        add     hl, de
+        jr      @end_moving
+
+@moving_left:
+        dec     b
+        ld      a, l
+        sub     $02
+        ld      l, a
+        jr      nc, @moving_left_no_borrow
+        dec     h
+@moving_left_no_borrow:
+        jr      @end_moving
+
+@moving_right:
+        inc     b
+        ld      de, $02
+        add     hl, de
+        jr      @end_moving
+
+@end_moving:
+        ret
+
+
+;===============================================================================
+; Function to move snake's head
+;===============================================================================
+f_move_snake_head:
+        ; The current head position is now the old position.
+        ld      a, (RAM_SNAKE_HEAD_X_POS)
+        ld      (RAM_SNAKE_HEAD_OLD_X_POS), a
+        ld      a, (RAM_SNAKE_HEAD_Y_POS)
+        ld      (RAM_SNAKE_HEAD_OLD_Y_POS), a
+        ld      de, (RAM_SNAKE_HEAD_MEM_POS)
+        ld      (RAM_SNAKE_HEAD_OLD_MEM_POS), de
+
+        ; Update snake array with the current direction
+        ; at current head position.
+        ld      hl, RAM_SNAKE_HEAD_X_POS
+        ld      b, (hl)
+        ld      hl, RAM_SNAKE_HEAD_Y_POS
+        ld      c, (hl)
+        call    f_compute_array_index_from_position
+        ld      de, RAM_SNAKE_ARRAY
+        add     hl, de
+        ld      a, (RAM_SNAKE_DIRECTION)
+        ld      (hl), a
+
+        ; Indicates that an apple has been eaten here.
+        ld      a, (RAM_APPLE_EATEN)
+        cp      $01
+        jp      nz, @no_apple_eaten
+        ld      a, (hl)
+        or      %10000000               ; set 7th bit
+        ld      (hl), a
+@no_apple_eaten:
+
+        ; Move the snake head.
+        ld      a, (RAM_SNAKE_HEAD_NEXT_X_POS)
+        ld      (RAM_SNAKE_HEAD_X_POS), a
+        ld      a, (RAM_SNAKE_HEAD_NEXT_Y_POS)
+        ld      (RAM_SNAKE_HEAD_Y_POS), a
+        ld      de, (RAM_SNAKE_HEAD_NEXT_MEM_POS)
+        ld      (RAM_SNAKE_HEAD_MEM_POS), de
+
+        ret
+
+
+;===============================================================================
+; Function to move snake's tail
+;===============================================================================
+f_move_snake_tail:
+        ; Check if an apple is digested here.
+        ld      hl, RAM_SNAKE_TAIL_X_POS
+        ld      b, (hl)
+        ld      hl, RAM_SNAKE_TAIL_Y_POS
+        ld      c, (hl)
+        call    f_compute_array_index_from_position
+        ld      de, RAM_SNAKE_ARRAY
+        add     hl, de
+        ld      a, (hl)
+
+        bit     7, a                    ; if we eaten an apple, the 7th bit is set.
+        jr      z, @no_apple_digested
+        and     %01111111               ; unset it.
+        ld      (hl), a
+        jr      @end_f_move_snake_tail
+
+@no_apple_digested:
+        ; The current tail position is now the old position.
+        ld      a, (RAM_SNAKE_TAIL_X_POS)
+        ld      (RAM_SNAKE_TAIL_OLD_X_POS), a
+        ld      a, (RAM_SNAKE_TAIL_Y_POS)
+        ld      (RAM_SNAKE_TAIL_OLD_Y_POS), a
+        ld      de, (RAM_SNAKE_TAIL_MEM_POS)
+        ld      (RAM_SNAKE_TAIL_OLD_MEM_POS), de
+
+        ; Flush current tail position in the snake array.
+        ld      hl, RAM_SNAKE_TAIL_X_POS
+        ld      b, (hl)
+        ld      hl, RAM_SNAKE_TAIL_Y_POS
+        ld      c, (hl)
+        call    f_compute_array_index_from_position
+        ld      de, RAM_SNAKE_ARRAY
+        add     hl, de
+        ld      a, $00
+        ld      (hl), a
+
+        ; Moving the snake tail.
+        ld      a, (RAM_SNAKE_TAIL_X_POS)
+        ld      b, a
+        ld      a, (RAM_SNAKE_TAIL_Y_POS)
+        ld      c, a
+        ld      a, (RAM_SNAKE_TAIL_DIRECTION)
+        ld      hl, (RAM_SNAKE_TAIL_MEM_POS)
+        call    f_compute_body_movement
+        ld      a, b
+        ld      (RAM_SNAKE_TAIL_X_POS), a
+        ld      a, c
+        ld      (RAM_SNAKE_TAIL_Y_POS), a
+        ld      (RAM_SNAKE_TAIL_MEM_POS), hl
+
+        ; Update the tail direction based on value in snake array.
+        ld      hl, RAM_SNAKE_TAIL_X_POS
+        ld      b, (hl)
+        ld      hl, RAM_SNAKE_TAIL_Y_POS
+        ld      c, (hl)
+        call    f_compute_array_index_from_position
+        ld      de, RAM_SNAKE_ARRAY
+        add     hl, de
+        ld      a, (hl)
+        and     %01111111               ; Set the new direction, without the Apple information.
+        ld      (RAM_SNAKE_TAIL_DIRECTION), a
+
+@end_f_move_snake_tail:
+        ret
+
+
+;===============================================================================
+; Function to detect a collision
 ;===============================================================================
 f_detect_collision:
         ; Detecte Edge collision.
-        ld      a, (RAM_SNAKE_HEAD_X_POS)
+        ld      a, (RAM_SNAKE_HEAD_NEXT_X_POS)
         cp      LEFT_BORDER
         jr      z, @collision_triggered
         cp      RIGHT_BORDER
         jr      z, @collision_triggered
 
-        ld      a, (RAM_SNAKE_HEAD_Y_POS)
+        ld      a, (RAM_SNAKE_HEAD_NEXT_Y_POS)
         cp      DOWN_BORDER
         jr      z, @collision_triggered
         cp      UP_BORDER
         jr      z, @collision_triggered
 
         ; Detecte Apple collision.
-        ld      hl, RAM_SNAKE_HEAD_X_POS
+        ld      hl, RAM_SNAKE_HEAD_NEXT_X_POS
         ld      b, (hl)
-        ld      hl, RAM_SNAKE_HEAD_Y_POS
+        ld      hl, RAM_SNAKE_HEAD_NEXT_Y_POS
         ld      c, (hl)
-
         call    f_compute_array_index_from_position
-
         ld      de, RAM_SNAKE_ARRAY
         add     hl, de
         ld      a, (hl)
@@ -466,11 +488,10 @@ f_detect_collision:
         cp      APPLE
         jr      z, @apple_eaten
 
-        ; Detecte Snake collision.
+        ; Detecte snake collision
         cp      $00
         jr      nz, @collision_triggered
 
-        ; No collision detected
         ret
 
 @apple_eaten:
@@ -625,7 +646,7 @@ f_get_new_random_value:
 
 
 ;===============================================================================
-; Function to draw the playing field.
+; Function to draw field's borders.
 ;===============================================================================
 f_draw_field:
         ; ====== Draw corners ==========
@@ -687,7 +708,7 @@ f_draw_field:
 ;===============================================================================
 ; Function triggered when VDP sent interrupt signal.
 ;===============================================================================
-f_interruptHandler:
+f_vdp_iHandler:
         ; saves registers on the stack
         push    af
         push    bc
@@ -705,7 +726,7 @@ f_interruptHandler:
 @hblank_handler:
         ; ====== HBlank_Handler here ===
         nop
-        jp      @f_interruptHandler_end
+        jp      @f_vdp_iHandler_end
 
         ; ====== VBlank_Handler here ===
 @vblank_handler:
@@ -713,7 +734,7 @@ f_interruptHandler:
         ; ====== Check if game logic done working.
         ld      a, (RAM_GAME_ROUTINE_DONE)
         cp      $01
-        jp      nz, @f_interruptHandler_end
+        jp      nz, @f_vdp_iHandler_end
         ld      a, $00
         ld      (RAM_GAME_ROUTINE_DONE), a
 
@@ -804,7 +825,6 @@ f_interruptHandler:
 @snake_moving_left:
         ld      a, (RAM_SNAKE_OLD_DIRECTION)
 
-
         cp      GOING_UP
         jr      z, @snake_moving_left_from_up
 
@@ -852,7 +872,6 @@ f_interruptHandler:
                 call    f_draw_tile
                 jr      @end_snake_moving_right
         @snake_moving_right_from_right:
-                ld      hl, (RAM_SNAKE_HEAD_OLD_MEM_POS)
                 ld      bc, $0800
                 call    f_draw_tile
                 jr      @end_snake_moving_right
@@ -897,15 +916,16 @@ f_interruptHandler:
         ld      hl, (RAM_SNAKE_TAIL_MEM_POS)
         call    f_draw_tile
 
-        ld      a, $01
-        ld      (RAM_VDP_ROUTINE_DONE), a
-
-; Draw apple.
+        ; Draw apple.
         ld      hl, (RAM_APPLE_MEM_POS)
         ld      bc, $0400
         call    f_draw_tile
 
-@f_interruptHandler_end:
+        ; We finished the VDP taff.
+        ld      a, $01
+        ld      (RAM_VDP_ROUTINE_DONE), a
+
+@f_vdp_iHandler_end:
         ; set back registers from the stack
         pop     hl
         pop     de
@@ -936,7 +956,7 @@ f_draw_tile:
 ;===============================================================================
 ; Function to handle what's going on when player press Pause button.
 ;===============================================================================
-f_pauseHandler:
+f_pause_iHandler:
         ld      a, (RAM_PALETTE_SWITCH)
         cp      $00
         jp      z, @load_nmi_plt
@@ -1009,7 +1029,7 @@ f_VDPInitialisation:
                 ;      X|               ; (M2) Must be 1 for M1/M3 to change screen height in Mode 4.
                 ;       X               ; 1= No sync, display is monochrome, 0= Normal display.
         .byte   SMS_VDP_REGISTER_0
-        .byte   %00100000               ; VDP Reg#1
+        .byte   %10100000               ; VDP Reg#1
                 ;X|||||||               ; Always to 1 (no effect).
                 ; X||||||               ; (BLK) 1= Display visible, 0= display blanked.
                 ;  X|||||               ; (IE) VBlank Interrupt enable.
