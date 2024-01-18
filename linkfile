@@ -1,10 +1,10 @@
 
 [libraries]
-bank 0 slot 5 build/sms.lib
+bank 0 slot 2 build/sms.lib
 
 
 [ramsections]
-bank 0 slot 5 "SMS_Z80"
+bank 0 slot 3 "SMS_Z80"
 
 
 [objects]

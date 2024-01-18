@@ -21,8 +21,8 @@ $(APP): sms.lib main.o
 sms.lib:
 	@echo "Compiling library $@"
 	$(CC) -l $(BUILD_DIR)/sms.lib $(SRC_DIR)/lib/sms.wla
-	$(shell echo "\n[libraries]\nbank 0 slot 5 build/$@\n" >> linkfile)
-	$(shell echo "\n[ramsections]\nbank 0 slot 5 \"SMS_Z80\"\n" >> linkfile)
+	$(shell echo "\n[libraries]\nbank 0 slot 2 build/$@\n" >> linkfile)
+	$(shell echo "\n[ramsections]\nbank 0 slot 3 \"SMS_Z80\"\n" >> linkfile)
 
 main.o:
 	@echo "Compiling object $@"
